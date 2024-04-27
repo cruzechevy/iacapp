@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Serverless Application Architecture
+Resources:
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: MyDynamoDBTable
+      AttributeDefinitions:
+      - AttributeName: id
+        AttributeType: N
+      - AttributeName: Name
+        AttributeType: S
+      KeySchema:
+      - AttributeName: id
+        KeyType: HASH
+      - AttributeName: Name
+        KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  GetLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: get_handler.get_handler
+      Runtime: python3.11
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Code:
+        S3Bucket: iacapp
+        S3Key: get_handler.zip
+  PostLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: post_handler.post_handler
+      Runtime: python3.11
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Code:
+        S3Bucket: iacapp
+        S3Key: post_handler.zip
+  APIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MyAPIGateway
+  GetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+      ResourceId:
+        Fn::GetAtt:
+        - APIGateway
+        - RootResourceId
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Sub:
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetLambdaFunction.Arn}/invocations
+          - GetLambdaFunction:
+              Fn::GetAtt:
+              - GetLambdaFunction
+              - Arn
+  PostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+      ResourceId:
+        Fn::GetAtt:
+        - APIGateway
+        - RootResourceId
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Sub:
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PostLambdaFunction.Arn}/invocations
+          - PostLambdaFunction:
+              Fn::GetAtt:
+              - PostLambdaFunction
+              - Arn
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: LambdaExecutionPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Scan
+            Resource:
+              Fn::GetAtt:
+              - DynamoDBTable
+              - Arn
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
